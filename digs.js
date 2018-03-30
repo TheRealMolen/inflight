@@ -36,6 +36,8 @@ understood, even if it's just by a piece of software.
 
 */
 
+'use strict';
+
 
 var Game = {
     display: null,
@@ -44,7 +46,7 @@ var Game = {
     map: {},
  
     init: function() {
-        var options = {fontFamily:'Lucida Console'}
+        var options = {fontFamily:'Consolas', bg:'#000', spacing:1, fontSize:15};
         this.display = new ROT.Display(options);
         document.body.appendChild(this.display.getContainer());
 
@@ -103,7 +105,9 @@ Player.prototype.handleEvent = function(e) {
 };
  
 Player.prototype._draw = function() {
-    Game.display.draw(this._x, this._y, "@", "#b0e8b0");
+    var pos = this._x + ',' + this._y;
+    var bg = Game.map[pos].bg;
+    Game.display.draw(this._x, this._y, "@", "#b0e8b0", bg);
 };
  
 Game._createPlayer = function(freeCells) {
@@ -147,19 +151,93 @@ Game._newTile = function(char,fg,bg) {
 };
 
 Game._floorBgCol = function() {
-    return this._rndCol('#282828',0,0,5);
+    return this._rndCol('#282828',0,0,3);
 };
 
 Game._generateMap = function() {
+    var that = this;
+    this.seats = {};
+
+    var addSeat = function(seat,row,x,y) {
+        var tile = that._newTile(seat, '#fff','#000');
+        tile.x = x;
+        tile.y = y;
+
+        that.map[x+','+y] = tile;
+        that.seats[row+seat] = tile;
+    };
+
+    for( var row=1; row<37; row+=1) {
+        var x = 4 + (row*2);
+        var y = 4;
+
+        // row 10s
+        if( row>=10 ) {
+            this.map[x+','+y] = this._newTile(''+Math.floor(row/10), '#fff','#000');
+        }
+        y+=1;
+
+        // row units
+        this.map[x+','+y] = this._newTile(''+(row%10), '#fff','#000');
+        y+=1;
+
+        // UI space
+        y+=2;
+        
+        var firstclass = (row <= 6);
+
+        if( firstclass )
+            y+=1;
+
+        addSeat('A',row,x,y);
+        y+=1;
+        
+        if (!firstclass) {
+            addSeat('B',row,x,y);
+            y+=1;
+        }
+
+        addSeat('C',row,x,y);
+        y+=1;
+    
+        //aisle
+        y+=1;
+        
+        addSeat('D',row,x,y);
+        y+=1;
+        addSeat('E',row,x,y);
+        y+=1;
+        addSeat('F',row,x,y);
+        y+=1;
+        addSeat('G',row,x,y);
+        y+=1;
+
+        //aisle
+        y+=1;
+
+        addSeat('H',row,x,y);
+        y+=1;
+        if( !firstclass) {
+            addSeat('J',row,x,y);
+            y+=1;
+        }
+
+        addSeat('K',row,x,y);
+        y+=1;
+    }
+    
+    this._drawWholeMap();
+
+/*
     var digger = new ROT.Map.Digger();
     var freeCells = [];
  
     var digCallback = function(x, y, value) {
-        if (value) { return; } /* do not store walls */
+        if (value) { return; } // do not store walls 
  
         var key = x+","+y;
         freeCells.push(key);
-        this.map[key] = this._newTile('.', '#fff', this._floorBgCol());
+        this.map[key] = this._newTile('', '#fff', this._floorBgCol());
     }
     digger.create(digCallback.bind(this));
     
@@ -167,7 +245,7 @@ Game._generateMap = function() {
 
     this._drawWholeMap();
     
-    this._createPlayer(freeCells);
+    this._createPlayer(freeCells);*/
 }
 
 Game._generateBoxes = function(freeCells) {
