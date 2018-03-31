@@ -1,20 +1,12 @@
-@font-face {
-    font-family: '04b03rev';
-    src:url('04b03rev.ttf.woff') format('woff'),
-        url('04b03rev.ttf.svg#04b03rev') format('svg'),
-        url('04b03rev.ttf.eot'),
-        url('04b03rev.ttf.eot?#iefix') format('embedded-opentype'); 
-    font-weight: normal;
-    font-style: normal;
-}
+
 
 body {
-    font-family: '04b03rev', 'Lucida Console', monospace;
+    font-family: 'Lucida Console', monospace;
     background-color: #000;
-    color: #feb;
+    color: rgb(168, 157, 122);
 }
 
 h1 {
-    font-style: italic;
     font-weight: bolder;
+    margin-left: 72px;
 }

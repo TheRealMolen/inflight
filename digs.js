@@ -39,31 +39,9 @@ understood, even if it's just by a piece of software.
 'use strict';
 
 
-var Game = {
-    display: null,
-    engine: null,
-    player: null,
-    map: {},
- 
-    init: function() {
-        var options = {fontFamily:'Consolas', bg:'#000', spacing:1, fontSize:15};
-        this.display = new ROT.Display(options);
-        document.body.appendChild(this.display.getContainer());
-
-        this._generateMap();
-
-        var scheduler = new ROT.Scheduler.Simple();
-        scheduler.add(this.player, true);
-        this.engine = new ROT.Engine(scheduler);
-        this.engine.start();
-    }
-};
-
-
 var Player = function(x, y) {
     this._x = x;
     this._y = y;
-    this._draw();
 };
 
 Player.prototype.act = function() {
@@ -73,119 +51,155 @@ Player.prototype.act = function() {
 }
  
 Player.prototype.handleEvent = function(e) {
-    var keyMap = {};
+    const keyMap = {};
     keyMap[38] = 0;
-    keyMap[33] = 1;
-    keyMap[39] = 2;
-    keyMap[34] = 3;
-    keyMap[40] = 4;
-    keyMap[35] = 5;
-    keyMap[37] = 6;
-    keyMap[36] = 7;
+    keyMap[39] = 1;
+    keyMap[40] = 2;
+    keyMap[37] = 3;
  
-    var code = e.keyCode;
- 
+    const code = e.keyCode;
     if (!(code in keyMap)) { return; }
  
-    var diff = ROT.DIRS[8][keyMap[code]];
-    var newX = this._x + diff[0];
-    var newY = this._y + diff[1];
+    const diff = ROT.DIRS[4][keyMap[code]];
+    const newX = this._x + diff[0] * 2;
+    let newY = this._y + diff[1];
  
-    var newKey = newX + "," + newY;
-    if (!(newKey in Game.map)) { return; } /* cannot move in this direction */
+    let newKey = newX + ',' + newY;
+    if (!(newKey in Game.map)) {
+        // either we've run out of plane, or this is the aisle
+        newY += diff[1];
+        newKey = newX + ',' + newY;
+        if (!(newKey in Game.map)) { return; }
+    }
     
-    var tile = Game.map[this._x+","+this._y];
-    Game.display.draw(this._x, this._y, tile.c, tile.fg, tile.bg);
-    
+    // ...and now draw us on the new seat
     this._x = newX;
     this._y = newY;
-    this._draw();
+
+    Game.setDirty();
+
+    // now return control to the engine's scheduler
+    // THINKS: we almost certainly don't want this!
     window.removeEventListener("keydown", this);
     Game.engine.unlock();
 };
  
-Player.prototype._draw = function() {
-    var pos = this._x + ',' + this._y;
-    var bg = Game.map[pos].bg;
-    Game.display.draw(this._x, this._y, "@", "#b0e8b0", bg);
+Player.prototype.draw = function() {
+    const pos = this._x + ',' + this._y;
+    const seat = Game.map[pos];
+    Game.display.draw(this._x, this._y, seat.c, seat.fg, "#105810");
 };
+
+Player.prototype.getSeat = function() {
+    const key = this._x + ',' + this._y;
+    return Game.map[key];
+};
+
+
+
+
+
+// enum for the state of each seat's entertainment unit
+const STATE = {
+    OFF: 0,
+    BROWSE: 1,
+    MAP: 2,
+    MOVIE: 3
+};
+
+const Game = {
+    display: null,
+    engine: null,
+    player: null,
+    map: {},
  
-Game._createPlayer = function(freeCells) {
-    var index = Math.floor(ROT.RNG.getUniform() * freeCells.length);
-    var key = freeCells.splice(index, 1)[0];
-    var parts = key.split(",");
-    var x = parseInt(parts[0]);
-    var y = parseInt(parts[1]);
-    this.player = new Player(x, y);
-};
+    init: function() {
+        const options = {fontFamily:'Consolas', bg:'#000', spacing:1, fontSize:17};
+        this.display = new ROT.Display(options);
+        document.body.appendChild(this.display.getContainer());
 
-// copy from ROT with more care over input parameter checking
-Game._rndNormal = function(mean, stddev) {
-    if( typeof(mean) === 'undefined') mean = 0;
-    if( typeof(stddev) === 'undefined') stddev = 1;
+        this._generateMap();    
+        this._createPlayer('1A');
+        this.setDirty();
 
-    if( stddev === 0 ) return mean;
+        const scheduler = new ROT.Scheduler.Simple();
+        scheduler.add(this.player, true);
+        this.engine = new ROT.Engine(scheduler);
+        this.engine.start();
+    },
 
-    do {
-        var u = 2*ROT.RNG.getUniform()-1;
-        var v = 2*ROT.RNG.getUniform()-1;
-        var r = u*u + v*v;
-    } while (r > 1 || r == 0);
-
-    var gauss = u * Math.sqrt(-2*Math.log(r)/r);
-    return mean + gauss*stddev;
-};
-
-Game._rndCol = function(col,hspread,sspread,lspread) {
-    var hsl = ROT.Color.rgb2hsl(ROT.Color.fromString(col));
-    var spread = [hspread,sspread,lspread];
-    for(var i=0; i<3; ++i) {
-        hsl[i] = this._rndNormal(hsl[i], spread[i] * 0.01);
+    setDirty: function() {
+        this.display.clear();
+        this._drawWholeMap();
+        this.player.draw();
+        this._drawSeatInfo();
     }
-    var rgb = ROT.Color.hsl2rgb(hsl);
-    return ROT.Color.toHex(rgb);
 };
 
-Game._newTile = function(char,fg,bg) {
-    return {c:char,fg:fg,bg:bg};
+
+Game._createPlayer = function(seat) {
+    const tile = this.seats[seat];
+    this.player = new Player(tile.x, tile.y);
 };
 
-Game._floorBgCol = function() {
-    return this._rndCol('#282828',0,0,3);
+Game._setSeatInfo = function(seatname, state, info ) {
+    const fgcols = {};
+    fgcols[STATE.OFF] = '#665';
+    fgcols[STATE.BROWSE] = '#aba';
+    fgcols[STATE.MAP] = '#99d';
+    fgcols[STATE.MOVIE] = '#ca6';
+
+    const seat = this.seats[seatname];
+
+    seat.state = state;
+    seat.info = info;
+    seat.fg = fgcols[state];
 };
 
 Game._generateMap = function() {
-    var that = this;
+    const that = this;
     this.seats = {};
 
-    var addSeat = function(seat,row,x,y) {
-        var tile = that._newTile(seat, '#fff','#000');
-        tile.x = x;
-        tile.y = y;
-
+    const addTile = function(char,x,y) {
+        const tile = {c:char, x:x, y:y, fg:'#ddd'};
         that.map[x+','+y] = tile;
-        that.seats[row+seat] = tile;
+    };
+    const addSeat = function(letter,row,x,y) {
+        const seat = row+letter;
+
+        const tile = {
+            c: letter,
+            seat: seat,
+            state: STATE.OFF,
+            info: null,
+
+            fg:'#999',
+            bg:'#000',
+            x: x,
+            y: y,
+            key: x+','+y
+        };
+
+        that.map[tile.key] = tile;
+        that.seats[seat] = tile;
+        that._setSeatInfo(seat, STATE.OFF);
     };
 
-    for( var row=1; row<37; row+=1) {
-        var x = 4 + (row*2);
-        var y = 4;
+    for( let row=1; row<37; row+=1) {
+        const x = 4 + (row*2);
+        let y = 4;
 
         // row 10s
-        if( row>=10 ) {
-            this.map[x+','+y] = this._newTile(''+Math.floor(row/10), '#fff','#000');
-        }
+        if( row>=10 )
+            addTile( Math.floor(row/10), x, y);
         y+=1;
-
-        // row units
-        this.map[x+','+y] = this._newTile(''+(row%10), '#fff','#000');
+        addTile( ''+(row%10), x, y );
         y+=1;
 
         // UI space
         y+=2;
         
         var firstclass = (row <= 6);
-
         if( firstclass )
             y+=1;
 
@@ -199,69 +213,89 @@ Game._generateMap = function() {
 
         addSeat('C',row,x,y);
         y+=1;
-    
-        //aisle
-        y+=1;
+        
+        y+=1; //aisle
         
         addSeat('D',row,x,y);
         y+=1;
-        addSeat('E',row,x,y);
-        y+=1;
-        addSeat('F',row,x,y);
-        y+=1;
-        addSeat('G',row,x,y);
-        y+=1;
-
-        //aisle
-        y+=1;
-
-        addSeat('H',row,x,y);
-        y+=1;
         if( !firstclass) {
-            addSeat('J',row,x,y);
+            addSeat('E',row,x,y);
             y+=1;
         }
-
-        addSeat('K',row,x,y);
-        y+=1;
+        addSeat('F',row,x,y);
     }
-    
-    this._drawWholeMap();
 
-/*
-    var digger = new ROT.Map.Digger();
-    var freeCells = [];
- 
-    var digCallback = function(x, y, value) {
-        if (value) { return; } // do not store walls 
- 
-        var key = x+","+y;
-        freeCells.push(key);
-        this.map[key] = this._newTile('', '#fff', this._floorBgCol());
+    // initialise seats
+    for( let i=0; i<14; i++ ) {
+        const seat = Object.keys(this.seats).random();
+        this._setSeatInfo(seat, STATE.MAP);
     }
-    digger.create(digCallback.bind(this));
-    
-    this._generateBoxes(freeCells);
-
-    this._drawWholeMap();
-    
-    this._createPlayer(freeCells);*/
-}
-
-Game._generateBoxes = function(freeCells) {
-    for (var i=0;i<10;i++) {
-        var index = Math.floor(ROT.RNG.getUniform() * freeCells.length);
-        var key = freeCells.splice(index, 1)[0];
-        this.map[key] = this._newTile('H', '#e8c62a', this._floorBgCol());
+    for( let i=0; i<18; i++ ) {
+        const seat = Object.keys(this.seats).random();
+        this._setSeatInfo(seat, STATE.BROWSE);
+    }
+    for( let i=0; i<38; i++ ) {
+        const seat = Object.keys(this.seats).random();
+        this._setSeatInfo(seat, STATE.MOVIE, {title:`One Flew Over the Cuckoo's Nest`});
     }
 };
 
 Game._drawWholeMap = function() {
-    for (var key in this.map) {
-        var parts = key.split(",");
-        var x = parseInt(parts[0]);
-        var y = parseInt(parts[1]);
-        var tile = this.map[key];
-        this.display.draw(x, y, tile.c, tile.fg, tile.bg);
+    Object.values(this.map).forEach( (tile) => {
+        this.display.draw(tile.x, tile.y, tile.c, tile.fg, tile.bg);
+    });
+};
+
+Game._drawSeatInfo = function () {
+    const x = 3;
+    let y = 17;
+
+    const seat = this.player.getSeat();
+    this.display.drawText( x, y, `Seat: ${seat.seat}` );
+    y+=1;
+
+    const activities = {};
+    activities[STATE.OFF] = 'Standby';
+    activities[STATE.BROWSE] = 'Browsing';
+    activities[STATE.MAP] = 'Flightmap';
+    activities[STATE.MOVIE] = 'Watching';
+    this.display.drawText( x, y, `Activity: ${activities[seat.state]}` );
+    y+=1;
+
+    if( seat.state === STATE.MOVIE ) {
+        this.display.drawText( x+6, y, seat.info.title );
+        y+=1;
     }
-}
+};
+
+
+
+
+// copy from ROT with more care over input parameter checking
+Game._rndNormal = function(mean, stddev) {
+    if( typeof(mean) === 'undefined') mean = 0;
+    if( typeof(stddev) === 'undefined') stddev = 1;
+
+    if( stddev === 0 ) return mean;
+
+    let u=0;
+    let r=0;
+    do {
+        u = 2*ROT.RNG.getUniform()-1;
+        const v = 2*ROT.RNG.getUniform()-1;
+        r = u*u + v*v;
+    } while (r > 1 || r == 0);
+
+    const gauss = u * Math.sqrt(-2*Math.log(r)/r);
+    return mean + gauss*stddev;
+};
+
+Game._rndCol = function(col,hspread,sspread,lspread) {
+    const hsl = ROT.Color.rgb2hsl(ROT.Color.fromString(col));
+    const spread = [hspread,sspread,lspread];
+    for(let i=0; i<3; ++i) {
+        hsl[i] = this._rndNormal(hsl[i], spread[i] * 0.01);
+    }
+    const rgb = ROT.Color.hsl2rgb(hsl);
+    return ROT.Color.toHex(rgb);
+};
