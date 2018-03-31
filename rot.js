@@ -607,8 +607,8 @@ String.prototype.lpad = String.prototype.lpad || function(character, count) {
 	var ch = character || "0";
 	var cnt = count || 2;
 
-	var s = "";
-	while (s.length < (cnt - this.length)) { s += ch; }
+	var s = ch;
+	while (s.length < (cnt - this.length)) { s += s; }
 	s = s.substring(0, cnt-this.length);
 	return s+this;
 };
@@ -622,8 +622,8 @@ String.prototype.rpad = String.prototype.rpad || function(character, count) {
 	var ch = character || "0";
 	var cnt = count || 2;
 
-	var s = "";
-	while (s.length < (cnt - this.length)) { s += ch; }
+	var s = ch;
+	while (s.length < (cnt - this.length)) { s += s; }
 	s = s.substring(0, cnt-this.length);
 	return this+s;
 };
