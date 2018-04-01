@@ -4,9 +4,21 @@ body {
     font-family: 'Lucida Console', monospace;
     background-color: #000;
     color: rgb(168, 157, 122);
+    margin: 48px;
 }
 
 h1 {
     font-weight: bolder;
     margin-left: 72px;
+}
+
+#monitor {
+    position: relative;
+    display: inline-block;
+}
+
+#dosemu {
+    position: relative;
+    top: 10px;
+    left: 10px;
 }

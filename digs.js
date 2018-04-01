@@ -124,6 +124,17 @@ Plane.prototype.getFlightTime = function() {
 };
 
 
+// enum for the current stage of the game
+const STAGE = {
+    WF_TAXI_OUT: 0,
+    TAXI_OUT: 1,
+    TAKEOFF: 2,
+    CRUISING: 3,
+    LANDING: 4,
+    TAXI_IN: 5,
+    AT_STAND: 6
+};
+
 // enum for the state of each seat's entertainment unit
 const STATE = {
     OFF: 0,
@@ -134,9 +145,11 @@ const STATE = {
 
 const Game = function() {
     this.display = null;
+    this.screen = null;
     this.player = null;
     this.plane = null;
     this.map = {};
+    this.stage = 0;
 };
 
 Game.prototype.init = function( movies, firstnames, lastnames ) {
@@ -152,13 +165,17 @@ Game.prototype.init = function( movies, firstnames, lastnames ) {
 
     const options = {fontFamily:'Consolas', bg:'#000', spacing:1, fontSize:22};
     this.display = new ROT.Display(options);
-    document.body.appendChild(this.display.getContainer());
+    $('#dosemu').append( this.display.getContainer() );
+
+    this.screen = new Screen( $('#monitor') );
 
     this.plane = new Plane();
 
     this._generateMap();    
     this._createPlayer('1A');
     this.setDirty();
+
+    this.screen.addTaxiShake();
 
     addEventListener("keydown", this.player);
 
@@ -184,17 +201,20 @@ Game.prototype.tick = function( timestamp ) {
     this.plane.addTime( deltatimems * this.TIMESCALE );
 
     let unusedms = deltatimems + this.unusedtime;
-    const TICKTIMEMS = 120;
 
-    while( unusedms >= TICKTIMEMS ) {
+    const TICKTIMEMS = 300;
+    let ticktime = _rndNormal( TICKTIMEMS, 10 );
+    while( unusedms >= ticktime ) {
         this._changeSeatActivity();
-        unusedms -= TICKTIMEMS;
+        unusedms -= ticktime;
+        ticktime = _rndNormal( TICKTIMEMS, 10 );
     }
 
     this.lasttime = timestamp;
     this.unusedtime = unusedms;
 
     this.setDirty();
+    this.screen.update( deltatimems );
     
     requestAnimationFrame( (ts) => { this.tick(ts); } );
 };
@@ -222,18 +242,20 @@ Game.prototype._changeSeatActivity = function() {
     const seat = Object.keys(this.seats).random();
 
     const r = ROT.RNG.getPercentage();
-    if( r < 30 ) {
+    if( r < 20 ) {
         this._setSeatInfo(seat, STATE.OFF);
     }
-    else if( r < 40 ) {
+    else if( r < 28 ) {
         this._setSeatInfo(seat, STATE.BROWSE);
     }
-    else if( r < 60 ) {
+    else if( r < 55 ) {
         this._setSeatInfo(seat, STATE.MAP);
     }
     else {
-        const movie = this._movies.random();
-        this._setSeatInfo(seat, STATE.MOVIE, {title:`${movie.title} (${movie.year})`});
+        if( seat.state !== STATE.MOVIE || ROT.RNG.getPercentage() < 15 ) {
+            const movie = this._movies.random();
+            this._setSeatInfo(seat, STATE.MOVIE, {title:`${movie.title} (${movie.year})`});
+        }
     }
 };
 
@@ -274,9 +296,9 @@ Game.prototype._generateMap = function() {
         that._setSeatInfo(seat, STATE.OFF);
     };
 
-    for( let row=1; row<37; row+=1) {
-        const x = 3 + (row*2);
-        let y = 4;
+    for( let row=1; row<=31; row+=1) {
+        const x = 8 + (row*2);
+        let y = 1;
 
         // row 10s
         if( row>=10 )
@@ -288,7 +310,7 @@ Game.prototype._generateMap = function() {
         // UI space
         y+=2;
         
-        var firstclass = (row <= 6);
+        var firstclass = (row <= 4);
         if( firstclass )
             y+=1;
 
@@ -327,7 +349,7 @@ Game.prototype._drawWholeMap = function() {
 
 Game.prototype._drawSeatInfo = function () {
     const x = 3;
-    let y = 18;
+    let y = 15;
 
     const seat = this.player.getSeat();
     this.display.drawText( x, y, `Seat: ${seat.seat}` );
@@ -368,7 +390,7 @@ Game.prototype._drawStatusBar = function() {
 
 
 // copy from ROT with more care over input parameter checking
-Game.prototype._rndNormal = function(mean, stddev) {
+const _rndNormal = function(mean, stddev) {
     if( typeof(mean) === 'undefined') mean = 0;
     if( typeof(stddev) === 'undefined') stddev = 1;
 
@@ -390,7 +412,7 @@ Game.prototype._rndCol = function(col,hspread,sspread,lspread) {
     const hsl = ROT.Color.rgb2hsl(ROT.Color.fromString(col));
     const spread = [hspread,sspread,lspread];
     for(let i=0; i<3; ++i) {
-        hsl[i] = this._rndNormal(hsl[i], spread[i] * 0.01);
+        hsl[i] = _rndNormal(hsl[i], spread[i] * 0.01);
     }
     const rgb = ROT.Color.hsl2rgb(hsl);
     return ROT.Color.toHex(rgb);
