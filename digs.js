@@ -115,6 +115,10 @@ Plane.prototype.addTime = function(ms) {
     this.flightTime += ms / 1000;
 };
 
+Plane.prototype.getFlightTimeMinutes = function() {
+    return Math.floor( this.flightTime / 60 );
+};
+
 Plane.prototype.getFlightTime = function() {
     const totmins = Math.floor( this.flightTime / 60 );
     const hrs = Math.floor( totmins / 60 );
@@ -135,6 +139,94 @@ const STAGE = {
     AT_STAND: 6
 };
 
+const Pacing = function( plane, screen ) {
+    this._plane = plane;
+    this._screen = screen;
+    this._stage = 0;
+    this._stageStartTime = 0;
+};
+
+Pacing.prototype._nextStage = function() {
+    if( this._stage === STAGE.AT_STAND )
+        return;
+    
+    this._stage += 1;
+
+    const stg = this._stage;
+    if( stg === STAGE.TAXI_OUT ) {
+        this._screen.addTaxiShake();
+    }
+    else if( stg === STAGE.TAKEOFF ) {
+        this._screen.updateShake( 'taxi', 0.5 );
+        this._screen.addBump();
+        this._screen.addAscentJudder();
+    }
+    else if( stg === STAGE.CRUISING ) {
+        this._screen.updateShake( 'judder', 3 );
+        this._screen.addFlightRumble();
+    }
+    else if( stg === STAGE.LANDING ) {
+    }
+    else if( stg === STAGE.TAXI_IN ) {
+        this._screen.addBump();
+        this._screen.addTaxiShake();
+    }
+    else if( stg === STAGE.AT_STAND ) {
+        this._screen.updateShake( 'taxi', 0.5 );
+    }
+
+    this._stageStartTime = this._plane.getFlightTimeMinutes();
+};
+
+Pacing.prototype.tick = function() {
+    const ftime = this._plane.getFlightTimeMinutes();
+
+    const stg = this._stage;
+    const stageTime = this._plane.getFlightTimeMinutes() - this._stageStartTime;
+    if( stg === STAGE.WF_TAXI_OUT ) {
+        if( stageTime > 10 && ROT.RNG.getPercentage() < 5 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.TAXI_OUT ) {
+        if( stageTime > 10 && ROT.RNG.getPercentage() < 5 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.TAKEOFF ) {
+        if( stageTime > 17 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.CRUISING ) {
+        if( stageTime > 10*60 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.LANDING ) {
+        if( stageTime > 10 && ROT.RNG.getPercentage() < 5 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.TAXI_IN ) {
+        if( stageTime > 10 && ROT.RNG.getPercentage() < 5 ) {
+            this._nextStage();
+        }
+    }
+    else if( stg === STAGE.AT_STAND ) {
+    }
+};
+
+Pacing.prototype.getStatus = function() {
+    const messages = ['AT STAND', 'TAXIING', 'TAKEOFF', 'CRUISING', 'LANDING', 'TAXIING', 'AT STAND'];
+    return messages[this._stage];
+};
+
+Pacing.prototype.isEntSysAvailable = function() {
+    return (this._stage >= STAGE.TAKEOFF && this._stage < STAGE.AT_STAND);
+};
+
+
 // enum for the state of each seat's entertainment unit
 const STATE = {
     OFF: 0,
@@ -148,8 +240,8 @@ const Game = function() {
     this.screen = null;
     this.player = null;
     this.plane = null;
+    this.pacing = null;
     this.map = {};
-    this.stage = 0;
 };
 
 Game.prototype.init = function( movies, firstnames, lastnames ) {
@@ -168,14 +260,12 @@ Game.prototype.init = function( movies, firstnames, lastnames ) {
     $('#dosemu').append( this.display.getContainer() );
 
     this.screen = new Screen( $('#monitor') );
-
     this.plane = new Plane();
+    this.pacing = new Pacing( this.plane, this.screen );
 
     this._generateMap();    
     this._createPlayer('1A');
     this.setDirty();
-
-    this.screen.addTaxiShake();
 
     addEventListener("keydown", this.player);
 
@@ -199,19 +289,23 @@ Game.prototype.tick = function( timestamp ) {
     const deltatimems = timestamp - this.lasttime;
 
     this.plane.addTime( deltatimems * this.TIMESCALE );
+    this.pacing.tick();
 
-    let unusedms = deltatimems + this.unusedtime;
+    if( this.pacing.isEntSysAvailable() ) {
+        let unusedms = deltatimems + this.unusedtime;
 
-    const TICKTIMEMS = 300;
-    let ticktime = _rndNormal( TICKTIMEMS, 10 );
-    while( unusedms >= ticktime ) {
-        this._changeSeatActivity();
-        unusedms -= ticktime;
-        ticktime = _rndNormal( TICKTIMEMS, 10 );
+        const TICKTIMEMS = 300;
+        let ticktime = _rndNormal( TICKTIMEMS, 10 );
+        while( unusedms >= ticktime ) {
+            this._changeSeatActivity();
+            unusedms -= ticktime;
+            ticktime = _rndNormal( TICKTIMEMS, 10 );
+        }
+
+        this.unusedtime = unusedms;
     }
 
     this.lasttime = timestamp;
-    this.unusedtime = unusedms;
 
     this.setDirty();
     this.screen.update( deltatimems );
@@ -335,10 +429,6 @@ Game.prototype._generateMap = function() {
         }
         addSeat('F',row,x,y);
     }
-
-    // initialise seats
-    for( let i=0; i<140; i++ )
-        this._changeSeatActivity();
 };
 
 Game.prototype._drawWholeMap = function() {
@@ -374,7 +464,9 @@ Game.prototype._drawStatusBar = function() {
     let status = '  ';
 
     status += this.plane.getFlightTime();
+    status = status.rpad(' ', 68);
 
+    status += this.pacing.getStatus();
     status = status.rpad(' ', 80);
 
     // rotjs isn't great at status bars....

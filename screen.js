@@ -33,7 +33,15 @@ Screen.prototype.addBump = function() {
 };
 
 Screen.prototype.addTaxiShake = function() {
-    this.addShake( 40, 1, 1, 1000, 'taxi', 1.7 );
+    this.addShake( 40, 2, 3, 1000, 'taxi', 1.4 );
+};
+
+Screen.prototype.addAscentJudder = function() {
+    this.addShake( 60, 2, 6, 10, 'judder', 1.2 );
+};
+
+Screen.prototype.addFlightRumble = function() {
+    this.addShake( 40, 2, 2, 1000, 'flight', 1.8 );
 };
 
 Screen.prototype.updateShake = function( name, duration ) {
